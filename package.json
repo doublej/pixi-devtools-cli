@@ -1,0 +1,43 @@
+{
+  "name": "@pixi/devtools-cli",
+  "version": "1.0.0",
+  "description": "CLI debugger for PixiJS applications via Chrome DevTools Protocol",
+  "type": "module",
+  "bin": {
+    "pixi-debug": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "chmod +x dist/cli.js",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.33.2",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/chrome-remote-interface": "^0.31.14",
+    "@types/node": "^20.14.1",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "pixijs",
+    "debug",
+    "devtools",
+    "cli",
+    "chrome-devtools-protocol"
+  ],
+  "license": "MIT"
+}
