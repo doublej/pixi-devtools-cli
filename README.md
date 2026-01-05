@@ -31,9 +31,9 @@ pixi-debug capture
 ## Installation
 
 ```bash
-npm install -g @pixi/devtools-cli
+bun add -g @pixi/devtools-cli
 # or
-npx @pixi/devtools-cli <command>
+bunx @pixi/devtools-cli <command>
 ```
 
 ## Commands
@@ -153,6 +153,9 @@ pixi-debug all > debug-snapshot.json
 | `-H, --host` | CDP host | localhost |
 | `-p, --port` | CDP port | 9222 |
 | `-t, --target` | Target page ID or URL | auto-detect |
+| `--transport` | Connection method: `cdp` or `claude` | cdp |
+
+> **Note:** The `claude` transport is a placeholder for future Claude-in-Chrome integration. For Claude Code users, use the `/pixi-debug` skill instead.
 
 ## Programmatic Usage
 
