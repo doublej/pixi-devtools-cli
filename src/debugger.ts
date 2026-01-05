@@ -1,5 +1,13 @@
-import { connect, evaluate, listTargets, type CDPClient, type CDPOptions, type ConsoleMessage, type LogEntry } from './cdp.js';
+import { connect, evaluate, listTargets, CDPTransport, type CDPClient, type CDPOptions, type ConsoleMessage, type LogEntry } from './cdp.js';
+import { ClaudeBridgeTransport } from './claude-bridge.js';
+import type { DebugTransport, TransportOptions } from './transport.js';
 import { INJECT_SCRIPT } from './inject.js';
+
+export type TransportType = 'cdp' | 'claude';
+
+export interface DebuggerOptions extends TransportOptions {
+  transport?: TransportType;
+}
 
 export interface PixiInfo {
   version: string;
@@ -143,70 +151,88 @@ export interface BenchmarkData {
 
 export class PixiDebugger {
   private client: CDPClient | null = null;
+  private transport: DebugTransport | null = null;
   private injected = false;
+  private transportType: TransportType = 'cdp';
 
-  async connect(options: CDPOptions = {}): Promise<void> {
-    this.client = await connect(options);
+  async connect(options: DebuggerOptions = {}): Promise<void> {
+    const { transport = 'cdp', ...transportOptions } = options;
+    this.transportType = transport;
+
+    if (transport === 'claude') {
+      this.transport = new ClaudeBridgeTransport();
+      await this.transport.connect(transportOptions);
+    } else {
+      // CDP transport (default) - keep using legacy client for console features
+      this.client = await connect(transportOptions);
+      this.transport = new CDPTransport();
+      await this.transport.connect(transportOptions);
+    }
+
     await this.inject();
   }
 
   async disconnect(): Promise<void> {
+    if (this.transport) {
+      await this.transport.disconnect();
+      this.transport = null;
+    }
     if (this.client) {
       await this.client.close();
       this.client = null;
-      this.injected = false;
     }
+    this.injected = false;
   }
 
   private async inject(): Promise<void> {
-    if (!this.client || this.injected) return;
-    await evaluate(this.client, INJECT_SCRIPT);
+    if (!this.transport || this.injected) return;
+    await this.transport.evaluate(INJECT_SCRIPT);
     this.injected = true;
   }
 
   async getInfo(): Promise<PixiInfo> {
     this.ensureConnected();
-    return evaluate<PixiInfo>(this.client!, 'window.__PIXI_CLI_DEBUG__.getInfo()');
+    return this.transport!.evaluate<PixiInfo>('window.__PIXI_CLI_DEBUG__.getInfo()');
   }
 
   async getSceneGraph(): Promise<SceneNode> {
     this.ensureConnected();
-    return evaluate<SceneNode>(this.client!, 'window.__PIXI_CLI_DEBUG__.getSceneGraph()');
+    return this.transport!.evaluate<SceneNode>('window.__PIXI_CLI_DEBUG__.getSceneGraph()');
   }
 
   async getStats(): Promise<SceneStats> {
     this.ensureConnected();
-    return evaluate<SceneStats>(this.client!, 'window.__PIXI_CLI_DEBUG__.getStats()');
+    return this.transport!.evaluate<SceneStats>('window.__PIXI_CLI_DEBUG__.getStats()');
   }
 
   async getRendering(): Promise<RenderingInfo> {
     this.ensureConnected();
-    return evaluate<RenderingInfo>(this.client!, 'window.__PIXI_CLI_DEBUG__.getRendering()');
+    return this.transport!.evaluate<RenderingInfo>('window.__PIXI_CLI_DEBUG__.getRendering()');
   }
 
   async getTextures(): Promise<TextureInfo[]> {
     this.ensureConnected();
-    return evaluate<TextureInfo[]>(this.client!, 'window.__PIXI_CLI_DEBUG__.getTextures()');
+    return this.transport!.evaluate<TextureInfo[]>('window.__PIXI_CLI_DEBUG__.getTextures()');
   }
 
   async getInstructions(): Promise<InstructionData | null> {
     this.ensureConnected();
-    return evaluate<InstructionData | null>(this.client!, 'window.__PIXI_CLI_DEBUG__.getInstructions()');
+    return this.transport!.evaluate<InstructionData | null>('window.__PIXI_CLI_DEBUG__.getInstructions()');
   }
 
   async getAll(): Promise<FullDebugData> {
     this.ensureConnected();
-    return evaluate<FullDebugData>(this.client!, 'window.__PIXI_CLI_DEBUG__.getAll()');
+    return this.transport!.evaluate<FullDebugData>('window.__PIXI_CLI_DEBUG__.getAll()');
   }
 
   async capture(): Promise<CaptureData> {
     this.ensureConnected();
-    return evaluate<CaptureData>(this.client!, 'window.__PIXI_CLI_DEBUG__.capture()');
+    return this.transport!.evaluate<CaptureData>('window.__PIXI_CLI_DEBUG__.capture()');
   }
 
   async benchmark(durationMs = 3000): Promise<BenchmarkData> {
     this.ensureConnected();
-    return evaluate<BenchmarkData>(this.client!, `window.__PIXI_CLI_DEBUG__.benchmark(${durationMs})`);
+    return this.transport!.evaluate<BenchmarkData>(`window.__PIXI_CLI_DEBUG__.benchmark(${durationMs})`);
   }
 
   async watchStats(intervalMs = 1000, callback: (stats: SceneStats & { fps?: number }) => void): Promise<() => void> {
@@ -215,7 +241,7 @@ export class PixiDebugger {
     const poll = async () => {
       while (running) {
         const stats = await this.getStats();
-        const fps = await evaluate<number>(this.client!, 'window.__PIXI_CLI_DEBUG__.getFps()');
+        const fps = await this.transport!.evaluate<number>('window.__PIXI_CLI_DEBUG__.getFps()');
         callback({ ...stats, fps });
         await new Promise(resolve => setTimeout(resolve, intervalMs));
       }
@@ -227,7 +253,7 @@ export class PixiDebugger {
   }
 
   private ensureConnected(): void {
-    if (!this.client) {
+    if (!this.transport) {
       throw new Error('Not connected. Call connect() first.');
     }
   }
@@ -282,7 +308,18 @@ export class PixiDebugger {
     await this.client!.Log.clear();
   }
 
-  static async listTargets(options: CDPOptions = {}): Promise<Array<{ id: string; title: string; url: string; type: string }>> {
+  static async listTargets(options: DebuggerOptions = {}): Promise<Array<{ id: string; title: string; url: string; type: string }>> {
+    const { transport = 'cdp' } = options;
+
+    if (transport === 'claude') {
+      const bridge = new ClaudeBridgeTransport();
+      return bridge.listTargets();
+    }
+
     return listTargets(options);
+  }
+
+  getTransportType(): TransportType {
+    return this.transportType;
   }
 }

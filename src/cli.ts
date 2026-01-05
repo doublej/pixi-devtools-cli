@@ -5,7 +5,7 @@ import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { PixiDebugger } from './debugger.js';
+import { PixiDebugger, type TransportType } from './debugger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -17,7 +17,8 @@ program
   .version('1.0.0')
   .option('-H, --host <host>', 'CDP host', 'localhost')
   .option('-p, --port <port>', 'CDP port', '9222')
-  .option('-t, --target <target>', 'Target page ID or URL');
+  .option('-t, --target <target>', 'Target page ID or URL')
+  .option('--transport <type>', 'Connection method: cdp or claude (default: cdp)', 'cdp');
 
 program
   .command('launch [url]')
@@ -82,9 +83,11 @@ program
   .description('List available browser targets')
   .action(async () => {
     const opts = program.opts();
+    const transport = opts.transport as TransportType;
     const targets = await PixiDebugger.listTargets({
       host: opts.host,
       port: parseInt(opts.port),
+      transport,
     });
 
     const pages = targets.filter(t => t.type === 'page');
@@ -360,14 +363,16 @@ program
 async function createDebugger(): Promise<PixiDebugger> {
   const opts = program.opts();
   const debugger_ = new PixiDebugger();
+  const transport = opts.transport as TransportType;
 
   let target = opts.target;
 
-  // Auto-select first non-devtools page if no target specified
-  if (!target) {
+  // Auto-select first non-devtools page if no target specified (CDP only)
+  if (!target && transport === 'cdp') {
     const targets = await PixiDebugger.listTargets({
       host: opts.host,
       port: parseInt(opts.port),
+      transport,
     });
     const page = targets.find(t =>
       t.type === 'page' &&
@@ -384,14 +389,15 @@ async function createDebugger(): Promise<PixiDebugger> {
       host: opts.host,
       port: parseInt(opts.port),
       target,
+      transport,
     });
   } catch (err) {
     const error = err as Error & { code?: string };
-    if (error.code === 'ECONNREFUSED') {
+    if (error.code === 'ECONNREFUSED' && transport === 'cdp') {
       console.error(JSON.stringify({
         error: 'Connection refused',
         message: `Cannot connect to Chrome at ${opts.host}:${opts.port}`,
-        hint: 'Start Chrome with: chrome --remote-debugging-port=9222'
+        hint: 'Start Chrome with: chrome --remote-debugging-port=9222\nOr try: pixi-debug --transport claude (requires Claude-in-Chrome)'
       }, null, 2));
       process.exit(1);
     }
